@@ -1,0 +1,458 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<!-- calculator.html - fully homomorphic encryption demo: calculator -->
+
+<!--
+
+    Copyright © 2010 Jan Minář <rdancer@rdancer.org>
+    Copyright © 2010 Google Inc.
+    Copyright © 2010 The Native Client Authors
+
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License version 2 (two),
+    as published by the Free Software Foundation.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with this program; if not, write to the Free Software Foundation, Inc.,
+    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+
+    * Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+    * Neither the name of Google Inc. nor the names of its contributors
+    may be used to endorse or promote products derived from this software
+    without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+  -->
+
+
+<!-- This file is based in part on the NaCl SDK file
+     <native_client_sdk_0_1_479_0/examples/hello_world/hello_world.html>
+  -->
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>Fully Homomorphic Encryption Demo: Calculator</title>
+
+  <script type="text/javascript">
+    // <![CDATA[
+
+    /*
+     * This little exercise alternately stores and deletes a small piece of
+     * data in the HTML 5 Web Storage.
+     *
+     * This will be useful to store the private key so that it does not have to
+     * be generated each time this page is loaded.
+     */
+
+    var key = "PRIVATE KEY";
+    var value = 123456;
+    try {
+	if ((data = window.localStorage.getItem(key)) == null) {
+	    //alert("Key not present -- storing again.");
+	    window.localStorage.setItem(key, value);
+	} else {
+	    //alert("Key retrieved: " + data + " -- deleting.");
+	    window.localStorage.clear();
+	}
+    } catch(e) {
+	alert("Web Storage error: " + e);
+    }
+
+    // ]]>
+  </script>
+
+  <!-- favicon linking code courtesy of
+  <http://www.winterdrache.de/freeware/png2ico/favicon.html>; accessed on
+  2010-08-24 -->
+  <link rel="icon" href="favicon.ico" type="image/x-icon"> 
+  <link rel="shortcut icon" href="favicon.ico" type="image/x-icon"> 
+
+  <style type="text/css">
+      /* .firstResult { font-size: 120%; font-weight: bold; } */
+  </style>
+
+  <!-- jQuery -->
+  <script type="text/javascript" src="jquery-1.4.2.js"></script>
+
+  <!-- JSON/XML-RPC Client <http://code.google.com/p/json-xml-rpc/> -->
+  <script type="text/javascript" src="rpc.js"></script>
+
+  <!-- Following script fragment uses and is based on
+       JSON/XML-RPC Client <http://code.google.com/p/json-xml-rpc/>
+       Version: 0.8.0.2 (2007-12-06)
+       Copyright: 2007, Weston Ruter <http://weston.ruter.net/>
+    -->
+  <script type="text/javascript">
+      // <![CDATA[
+      xmlrpc = new rpc.ServiceProxy("RPC2", {
+                              asynchronous: false,  //default: true
+                              sanitize: true,       //default: true
+			      // default: null (synchronous introspection
+			      // populates)
+                              methods: /* ['greet'] */ null,
+                              protocol: 'XML-RPC',  //default: JSON-RPC
+      }); 
+
+      /* Asynchronous semantics (the default: the ‘asynchronous’ parameter
+         above set to true) */
+      //service.greet({
+      //   params:{name:"World"},
+      //   onSuccess:function(message){
+      //       alert(message);
+      //   },
+      //   onException:function(e){
+      //       alert("Unable to greet because: " + e);
+      //       return true;
+      //   }
+      //});
+      
+      /* Synchronous semantics (set ‘asynchronous’ to false) */
+      //try {
+      //   var message = xmlrpc.sample.add(3, 5);
+      //   alert(message);
+      //}
+      //catch(e){
+      //   alert("Unable to perform addition because: " + e);
+      //}
+
+      // ]]>
+  </script>
+
+  <script type="text/javascript">
+      // <![CDATA[
+
+      /* Spin the throbber */
+      function updateThrobber() {
+	  throbber = document.getElementById('throbber');
+	  if        (throbber.innerHTML == '') {
+	      throbber.innerHTML = '.';
+	  } else if (throbber.innerHTML == '.') {
+	      throbber.innerHTML = '..';
+	  } else if (throbber.innerHTML == '..') {
+	      throbber.innerHTML = '...';
+	  } else {
+	      throbber.innerHTML = '';
+	  }
+	  window.setTimeout('updateThrobber()', 1000);
+      }
+
+      /* Copy the contents of the input box into the result label */
+      function updateResult() {
+	  /* Sanity checks */
+
+	  if ((formula = document.getElementById('formula').value) == '') {
+	      // Empty formula -- don't do anything
+	      return;
+	  }
+
+	  /* Disable the throbber */
+	  // DNW
+	  // Reset ID so the updateThrobber() routine would balk
+	  if (throbber = document.getElementById('throbber')) {
+	      // the element does exist => it's OK to proceed
+	      throbber.innerHTML = '';
+	      throbber.style.visibility = 'hidden';
+	  }
+
+	  /* Get rid of the old first line */
+
+	  oldResult = document.getElementById('firstResult');
+	  oldResult.id = '';
+	  oldResult.class = 'result';
+
+	  /* Insert the new first line */
+
+	  // DNW
+	  //newResult = document.createElement("div");
+	  //newResult.id = 'firstResult';
+	  //newResult.innerHTML
+	  //    = document.getElementById('formula').value + " = ";
+	  //oldResult.insertBefore(newResult);
+
+	  content = document.getElementById('results').innerHTML;
+	  document.getElementById('results').innerHTML =
+	      "<div id=\"firstResult\" class=\"firstResult\">"
+	      + formula + " = "
+	      + "<div style=\"display: inline\" id=\"throbber\">[throbber]</div>"
+	      + "<div style=\"display: inline\" id=\"resultValue\"></div>"
+	      + "</div>"
+	      + content;
+
+	  updateThrobber();
+      }
+
+
+      /* Do the gory work and produce the result */
+      function calculate() {
+	  // This will start the throbber
+	  updateResult();
+
+	  if ((formula = document.getElementById('formula').value) != '') {
+	      // Valid formula -- call NaCl to compute the result
+	      document.getElementById('resultValue').innerHTML
+			= evaluate(formula);
+	  }
+
+
+	  /* Disable the throbber */
+	  // Change ID so the updateThrobber() routine would balk
+	  // TODO set the visibility to invisible
+	  document.getElementById('throbber').id = '';
+      }
+
+      window.onload = updateResult;
+
+      // ]]>
+  </script>
+  
+  <!-- Adapted from hello_world.html -->
+
+  <!--
+  Copyright (c) 2010 The Native Client Authors. All rights reserved.
+  Use of this source code is governed by a BSD-style license that can be
+  found in the LICENSE file.
+  -->
+
+  <script type="text/javascript">
+    // <![CDATA[
+    fhe_calculator = null;  // Global application object.
+    status_text = 'Loading...';
+
+    function moduleDidLoad() {
+      fhe_calculator = document.getElementById('fhe_calculator');
+      updateStatus('&nbsp;'); // Must not be an empty string
+    }
+
+    // If the page loads before the Native Client module loads, then set the
+    // status message indicating that the module is still loading.  Otherwise,
+    // do not change the status message.
+    function pageDidLoad() {
+      if (fhe_calculator == null) {
+        updateStatus('Loading...');
+      } else {
+        // It's possible that the Native Client module onload event fired
+        // before the page's onload event.  In this case, the status message
+        // will reflect 'SUCCESS', but won't be displayed.  This call will
+        // display the current message.
+        updateStatus();
+      }
+    }
+
+    function fortytwo() {
+      try {
+        alert(fhe_calculator.fortytwo());
+      } catch(e) {
+        alert(e.message);
+      }
+    }
+
+    /**
+     * Send the xmlRpcRequest to the XML-RPC server, return the XML-RPC
+     * response.
+     */
+    function sendToXmlRpcServer(xmlRpcRequest) {
+	//throw ("XML-RPC not implemented yet");
+        try {
+           var message = xmlrpc.sample.add(parseInt(xmlRpcRequest), 0);
+           return(message);
+        }
+        catch(e){
+           return("XML-RPC server error: " + e);
+        }
+    }
+
+    /**
+     * Build the structure containing the parsed formula and the base64-encoded
+     * encrypted bits
+     *
+     * @return structure containing the formula and the encoded variables
+     */
+    function buildXmlRpcRequest(formula) {
+	/* Let the NaCl pre-process the formula.  Number of elements is
+	   returned */
+	var arrayLength = fhe_calculator.preprocess(formula);
+	//return (arrayLength);
+
+	if (arrayLength < 1) {
+	    // This is an error, we expect at least the formula back with no
+	    // variables
+	    throw ("Internal error: NaCl returned " + arrayLength
+		    + " when pre-processing the formula");
+	}
+
+	/*
+	 * Build the XML-RPC request
+	 */
+
+	var request;
+
+	/* Get the formula */
+	request.formula = fhe_calculator.getNext();
+	alert(request.formula);
+
+	/* Get the base64-encoded encrypted single integers */
+	for (var i = 0; i < arrayLength - 1; i++) {
+	    request.variables[i]["id"] = "var" + i;
+	    if ((request.variables[i]["value"] = fhe_calculator.getNext())
+			    == "") {
+		throw ("Internal error: cannot get enough bits from NaCl");
+	    };
+	}
+
+	return request;
+    }
+
+    function evaluate(formula) {
+      try {
+	// Evaluate locally
+        //return(fhe_calculator.evaluate(formula));
+
+
+	var arraySize = fhe_calculator.preprocess(formula);
+	//return arraySize;
+
+	var result = "";
+	for (var i = 0; i < arraySize; i++) {
+	    result += i + ": \"" + fhe_calculator.getNext() + "\"\n";
+	}
+	return result;
+
+	var request = buildXmlRpcRequest(formula);
+	return request.formula;
+
+//	/* Let NaCl pre-process the formula into boolean circuit + data,
+//	   wrapped in XML-RPC, ready to send to server */ 
+//	var xmlRpcRequest = fhe_calculator.formulaToXmlRpcRequest(formula);
+//	return (xmlRpcRequest);
+//	
+//	/* Send the XML-RPC request to server, receive the XML-RPC-encoded
+//	   encrypted response */
+//	var xmlRpcResponse = sendToXmlRpcServer(xmlRpcRequest);
+        var bits = xmlrpc.fhe.calculate(request);
+//	return (xmlRpcResponse);
+//
+//	/* Pass XML-RPC-encoded result to NaCl */
+//	var result = fhe_calculator.xmlRpcResponseToResult(xmlRpcResponse);
+//        return(result);
+
+      } catch(e) {
+        return(e.message);
+      }
+    }
+
+    // Set the global status message.  If the element with id 'status_field'
+    // exists, then set its HTML to the status message as well.
+    // opt_message The message test.  If this is null or undefined, then
+    //     attempt to set the element with id 'status_field' to the value of
+    //     |status_text|.
+    function updateStatus(opt_message) {
+      if (opt_message)
+        status_text = opt_message;
+      var status_field = document.getElementById('status_field');
+      if (status_field) {
+        status_field.innerHTML = status_text;
+      }
+    }
+    // ]]>
+  </script>
+</head>
+
+<body style="background: black; font-family: sans-serif; color: white;"
+    onload="document.getElementById('formula').focus(); pageDidLoad()">
+    <!-- background image -->
+    <div id="background_image" style="position: absolute; margin: 0; width: 99%; height: 98%; overflow: hidden;">
+	<img src="background.jpeg" style="width: 150%" />
+    </div id="background_image">
+    <!-- calculator -->
+    <div id="main_content" style="position: absolute; margin-left: 15%; margin-top: 12%; padding: 20pt">
+      <form action="javascript:calculate()">
+	<div id="status_field">Loading...</div>
+	<input name="formula" id="formula" value="" />
+		<input type="submit" value="Calculate" /><br />
+	<div id="results">
+	    <div id="firstResult" class="firstResult">
+		<!-- <big>1 + 1 = 2</big> ← [throbber] in place of result while
+		calculation is in progress -->
+	    </div id="firstResult">
+	    <!--
+	    [last formula &amp; result]<br />
+	    [second last formula &amp; result]<br />
+	    [third last formula &amp; result]<br />
+	    …<br />
+	      -->
+	</div id="results">
+      </form>
+    </div id="main_content">
+
+  <!-- Adapted from hello_world.html -->
+
+  <!--
+  Copyright (c) 2010 The Native Client Authors. All rights reserved.
+  Use of this source code is governed by a BSD-style license that can be
+  found in the LICENSE file.
+  -->
+
+<div id="hello_world_html_div">
+<p>
+  <!-- For development, use a #develop location, which loads the develop
+  version of the module.
+  -->
+  <div id="nacl_fhecalculator_content" style="background: blue"></div>
+  <script type="text/javascript">
+    // <![CDATA[
+    contentDiv = document.getElementById('nacl_fhecalculator_content');
+    if (window.location.hash == '#develop') {
+      // Load the develop version of the module.
+      contentDiv.innerHTML = '<embed name="nacl_module" '
+                             + 'id="fhe_calculator" '
+                             + 'width=0 height=0 '
+                             + 'type="pepper-application/fhe_calculator" />';
+      moduleDidLoad();
+    } else {
+      // Load the published .nexe.  This includes the 'nexes' attribute which
+      // shows how to load multi-architecture modules.  Each entry in the
+      // table is a key-value pair: the key is the runtime ('x86-32',
+      // 'x86-64', etc.); the value is a URL for the desired NaCl module.
+      var nexes = 'x86-32: fhe_calculator_x86_32.nexe\n'
+                  + 'x86-64: fhe_calculator_x86_64.nexe\n'
+                  + 'ARM: fhe_calculator_arm.nexe ';
+      contentDiv.innerHTML = '<embed name="nacl_module" '
+                             + 'id="fhe_calculator" '
+                             + 'width=0 height=0 '
+                          // + 'nexes="' + nexes + '" '
+                             + 'type="application/x-nacl-srpc" '
+                             + 'onload=moduleDidLoad() />';
+      // Note: this code is here to work around a bug in Chromium build
+      // #47357.  See also
+      // http://code.google.com/p/nativeclient/issues/detail?id=500
+      document.getElementById('fhe_calculator').nexes = nexes;
+    }
+    // ]]>
+  </script>
+<!-- XXX Unmatched </p> --><!-- </p> -->
+</div id="hello_world_html_div">
+</body>
+</html>
